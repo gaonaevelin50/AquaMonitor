@@ -28,12 +28,18 @@ El ESP32 y tú ya no tienen que estar en la misma red: los dos solo necesitan in
 5. **Deployments > Redeploy** para que tome las variables.
 6. Abre `https://tu-proyecto.vercel.app`, crea tu cuenta y listo. Las tablas se crean solas.
 
-## 2. ESP32
-En `esp32/aquamonitor_esp32/aquamonitor_esp32.ino` cambia:
-- `WIFI_SSID` / `WIFI_PASS`: la red donde esté el ESP32 (puede ser otra distinta a la tuya).
+## 2. ESP32 (funciona en cualquier red WiFi)
+Instala la librería **WiFiManager (tzapu)** en Arduino IDE > Administrar bibliotecas. En el `.ino` solo cambia:
 - `SERVER_URL`: `https://tu-proyecto.vercel.app/api/lecturas`
 - `API_KEY`: la misma que pusiste en `AQUAMONITOR_API_KEY`.
-Lo demás (pines, Partition Scheme "Huge APP", niveles) igual que antes.
+
+La red WiFi ya NO va en el código. Se elige desde el celular:
+1. Enciende el ESP32: si no conoce ninguna red, crea el WiFi **AquaMonitor-Setup** (clave `aquamonitor`).
+2. Conecta el celular a ese WiFi; se abre una página (o entra a 192.168.4.1) > **Configure WiFi**.
+3. Elige la red (o el punto de acceso de tu celular), escribe la clave y guarda.
+4. Queda guardada. En otro lugar, si no encuentra la red, vuelve a abrir AquaMonitor-Setup.
+Para borrar la red guardada: mantén pulsado el botón **BOOT** del ESP32 por 3 segundos.
+Solo redes de 2.4 GHz con internet (no sirven las que piden iniciar sesión en una página).
 
 ## 3. Vincular
 **Dispositivos > Vincular por WiFi**, con el ESP32 prendido. Vincúlalo apenas aparezca:
