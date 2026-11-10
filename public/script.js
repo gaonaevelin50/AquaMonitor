@@ -15,11 +15,12 @@ const BLE_SERVICE = "a9e30001-6c1b-4a4e-9a31-5f0b7c2d8e10";
 const BLE_CHAR = "a9e30002-6c1b-4a4e-9a31-5f0b7c2d8e10";
 const BLE_SIN_DATO = 0x7fff; // valor que usa el ESP32 cuando un sensor no responde
 
-let sensores = { temperatura: null, nivelAgua: null, turbidez: null, ph: null };
+let sensores = { temperatura: null, nivelAgua: null, turbidez: null };
 let dispositivos = [];
 let dispositivoActivoId = Number(localStorage.getItem(LS_DISPOSITIVO)) || null;
 let wifiEstado = null; // "en_linea" | "sin_senal" | "sin_datos" | null
 let filtroHistorico = "Todos";
+let ultimaRecargaHistoricos = 0;
 let timerLecturas = null;
 let timerEscaner = null;
 let firmaPendientes = "";
@@ -240,7 +241,7 @@ function actualizarUI(idSensor, valor, textoEstado, tipo, pct, desc) {
   if (!valEl) return;
 
   if (typeof valor === "number") {
-    const unidades = { temperatura: "°C", ph: "", nivelAgua: "%", turbidez: "NTU" };
+    const unidades = { temperatura: "°C", nivelAgua: "%", turbidez: "NTU" };
     valEl.textContent = valor.toFixed(1);
     if (unidades[idSensor]) valEl.appendChild(crearEl("small", "", unidades[idSensor]));
   } else {
@@ -272,7 +273,7 @@ function sinSensor(idSensor) {
 }
 
 function mostrarSinDatos(mensaje) {
-  ["temperatura", "nivelAgua", "turbidez", "ph"].forEach((id) => {
+  ["temperatura", "nivelAgua", "turbidez"].forEach((id) => {
     actualizarUI(id, "--", "Sin datos", "off", null, mensaje);
   });
   marcarActualizacion(null);
@@ -284,7 +285,7 @@ function marcarActualizacion(fecha) {
 }
 
 function procesarSensores() {
-  const { temperatura: t, nivelAgua: n, turbidez: tb, ph } = sensores;
+  const { temperatura: t, nivelAgua: n, turbidez: tb } = sensores;
 
   if (t === null) sinSensor("temperatura");
   else if (t < 16) actualizarUI("temperatura", t, "Baja", "alerta", (t / 40) * 100, "Temperatura demasiado baja.");
@@ -299,11 +300,6 @@ function procesarSensores() {
   if (tb === null) sinSensor("turbidez");
   else if (tb <= 30) actualizarUI("turbidez", tb, "Normal", "ok", tb, "Agua transparente.");
   else actualizarUI("turbidez", tb, "Alta", "alerta", tb, "Agua con alta turbidez.");
-
-  if (ph === null) sinSensor("ph");
-  else if (ph < 6.5) actualizarUI("ph", ph, "Bajo", "alerta", (ph / 14) * 100, "pH ácido.");
-  else if (ph <= 8.0) actualizarUI("ph", ph, "Normal", "ok", (ph / 14) * 100, "pH óptimo.");
-  else actualizarUI("ph", ph, "Alto", "alerta", (ph / 14) * 100, "pH alcalino.");
 }
 
 // Muestra el estado de la conexión (WiFi o Bluetooth) y el nombre del dispositivo
@@ -371,8 +367,7 @@ async function actualizarLecturas() {
       sensores = {
         temperatura: d.temperatura,
         nivelAgua: d.nivel_agua,
-        turbidez: d.turbidez,
-        ph: d.ph
+        turbidez: d.turbidez
       };
       procesarSensores();
       marcarActualizacion(new Date(d.ts * 1000));
@@ -385,8 +380,10 @@ async function actualizarLecturas() {
 
 async function ciclo() {
   await actualizarLecturas();
-  // Si estás viendo la lista de dispositivos, refresca su estado (en línea / sin señal)
-  if (!vistas.dispositivos.classList.contains("hidden")) await cargarDispositivos();
+  // Si estás viendo los históricos, se actualizan solos (llega un registro nuevo cada 2 minutos)
+  if (!vistas.historicos.classList.contains("hidden") && Date.now() - ultimaRecargaHistoricos >= 30000) {
+    await cargarHistoricos();
+  }
 }
 
 function iniciarLecturas() {
@@ -414,8 +411,7 @@ function recibirPaqueteBle(vista) {
   sensores = {
     temperatura: leer(0, 10),
     nivelAgua: leer(2, 10),
-    turbidez: leer(4, 10),
-    ph: leer(6, 100)
+    turbidez: leer(4, 10)
   };
   procesarSensores();
   marcarActualizacion(new Date());
@@ -438,7 +434,7 @@ async function conectarBluetooth() {
   if (!navigator.bluetooth) {
     mostrarInfo("Este navegador no permite Bluetooth", [
       "El panel usa Web Bluetooth, que funciona en Chrome y Edge (Android, Windows, Mac y Linux). No está disponible en iPhone ni en iPad.",
-      "Mientras tanto puedes conectar el ESP32 por WiFi desde la sección Dispositivos."
+      "Mientras tanto puedes conectar el ESP32 por WiFi con el botón «Conectar por WiFi» del panel de monitoreo."
     ]);
     return;
   }
@@ -509,7 +505,6 @@ async function cargarDispositivos() {
     else localStorage.removeItem(LS_DISPOSITIVO);
   }
   actualizarEstadoConexion();
-  renderizarDispositivos();
 }
 
 function seleccionarDispositivo(id) {
@@ -518,97 +513,7 @@ function seleccionarDispositivo(id) {
   wifiEstado = null;
   if (!bleActivo) mostrarSinDatos("Cargando datos...");
   actualizarEstadoConexion();
-  renderizarDispositivos();
   actualizarLecturas();
-}
-
-async function desvincularDispositivo(dev) {
-  if (!confirm(`¿Desvincular "${dev.nombre}"? Se borrarán sus lecturas guardadas.`)) return;
-  try {
-    await api(`/api/dispositivos/${dev.id}`, { method: "DELETE" });
-    await cargarDispositivos();
-    actualizarLecturas();
-  } catch (err) {
-    mostrarAviso(err.message);
-  }
-}
-
-function crearSenal(nivel) {
-  const NS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 20");
-  svg.setAttribute("class", "senal");
-  svg.setAttribute("aria-hidden", "true");
-  [6, 10, 14, 18].forEach((alto, i) => {
-    const barra = document.createElementNS(NS, "rect");
-    barra.setAttribute("x", i * 6);
-    barra.setAttribute("y", 20 - alto);
-    barra.setAttribute("width", 4);
-    barra.setAttribute("height", alto);
-    barra.setAttribute("rx", 1);
-    if (i >= nivel) barra.setAttribute("class", "apagada");
-    svg.appendChild(barra);
-  });
-  return svg;
-}
-
-function nivelSenal(dev) {
-  if (!dev.en_linea) return 0;
-  return { Excelente: 4, Buena: 3, Regular: 2, "Débil": 1 }[dev.senal] || 1;
-}
-
-function renderizarDispositivos() {
-  const grid = document.getElementById("dispositivos-grid");
-  grid.replaceChildren();
-
-  if (dispositivos.length === 0) {
-    grid.appendChild(crearEl(
-      "div", "dispositivos-vacio",
-      "Todavía no hay dispositivos. Enciende el ESP32 y toca «Vincular por WiFi»."
-    ));
-    return;
-  }
-
-  dispositivos.forEach((dev) => {
-    const activo = dev.id === dispositivoActivoId;
-    const card = crearEl("div", "dispositivo-card" + (activo ? " activo" : ""));
-    card.addEventListener("click", () => seleccionarDispositivo(dev.id));
-
-    const top = crearEl("div", "dispositivo-top");
-    top.appendChild(crearSenal(nivelSenal(dev)));
-    top.appendChild(crearEl("span", "dispositivo-nombre", dev.nombre));
-    top.appendChild(crearEl(
-      "span", "estado " + (dev.en_linea ? "estado-ok" : "estado-off"),
-      dev.en_linea ? "En línea" : "Sin señal"
-    ));
-    card.appendChild(top);
-
-    const datos = crearEl("dl", "dispositivo-datos");
-    const filas = [
-      ["Señal", dev.rssi !== null ? `${dev.senal} (${dev.rssi} dBm)` : dev.senal],
-      ["IP", dev.ip || "—"],
-      ["MAC", dev.mac],
-      ["Última vez", formatearFecha(dev.ultima)]
-    ];
-    filas.forEach(([etiqueta, valor]) => {
-      datos.appendChild(crearEl("dt", "", etiqueta));
-      datos.appendChild(crearEl("dd", "", valor));
-    });
-    card.appendChild(datos);
-
-    const pie = crearEl("div", "dispositivo-pie");
-    pie.appendChild(crearEl("span", "dispositivo-en-panel", activo ? "Se ve en el panel" : ""));
-    const btnDesv = crearEl("button", "btn btn-danger btn-small", "Desvincular");
-    btnDesv.type = "button";
-    btnDesv.addEventListener("click", (e) => {
-      e.stopPropagation();
-      desvincularDispositivo(dev);
-    });
-    pie.appendChild(btnDesv);
-    card.appendChild(pie);
-
-    grid.appendChild(card);
-  });
 }
 
 // -----------------------------------------------------
@@ -617,14 +522,12 @@ function renderizarDispositivos() {
 const menuItems = document.querySelectorAll(".menu-item");
 const vistas = {
   dashboard: document.getElementById("view-dashboard"),
-  historicos: document.getElementById("view-historicos"),
-  dispositivos: document.getElementById("view-dispositivos")
+  historicos: document.getElementById("view-historicos")
 };
 
 function irAVista(vista) {
   menuItems.forEach((i) => i.classList.toggle("active", i.dataset.view === vista));
   Object.keys(vistas).forEach((k) => vistas[k].classList.toggle("hidden", k !== vista));
-  if (vista === "dispositivos") cargarDispositivos();
   if (vista === "historicos") cargarHistoricos();
   window.scrollTo(0, 0);
 }
@@ -639,7 +542,6 @@ menuItems.forEach((item) => {
 // -----------------------------------------------------
 // VINCULAR DISPOSITIVOS POR WIFI
 // -----------------------------------------------------
-const btnEscanear = document.getElementById("btn-escanear-dispositivo");
 const modalScanner = document.getElementById("modal-scanner");
 const listaEncontrados = document.getElementById("lista-dispositivos-encontrados");
 
@@ -725,14 +627,10 @@ function cerrarModalEscaner() {
   modalScanner.classList.add("hidden");
 }
 
-btnEscanear.addEventListener("click", abrirModalEscaner);
 document.getElementById("btn-cerrar-modal").addEventListener("click", cerrarModalEscaner);
 modalScanner.addEventListener("click", (e) => { if (e.target === modalScanner) cerrarModalEscaner(); });
 
-document.getElementById("btn-banner-wifi").addEventListener("click", () => {
-  irAVista("dispositivos");
-  abrirModalEscaner();
-});
+document.getElementById("btn-banner-wifi").addEventListener("click", abrirModalEscaner);
 
 // -----------------------------------------------------
 // REGISTROS HISTÓRICOS
@@ -771,6 +669,7 @@ function renderizarTablaHistoricos(lista) {
 }
 
 async function cargarHistoricos() {
+  ultimaRecargaHistoricos = Date.now();
   if (!dispositivoActivoId) {
     mensajeTabla("Vincula un dispositivo por WiFi para ver sus registros. Las lecturas por Bluetooth no se guardan.");
     return;

@@ -44,6 +44,8 @@ SEGUNDOS_SIN_SENAL = 30          # sin datos por este tiempo = "Sin señal"
 SEGUNDOS_PENDIENTE = 120         # un dispositivo nuevo se ofrece para vincular por este tiempo
 TOKEN_HORAS = 24                 # duración de la sesión
 MAX_LECTURAS_POR_DISPOSITIVO = 5000
+INTERVALO_HISTORIAL_S = 120      # el historial guarda un registro cada 2 minutos
+MAX_HISTORIAL_POR_DISPOSITIVO = 5000
 MAX_INTENTOS_LOGIN = 5           # intentos fallidos por IP antes de bloquear 60 s
 
 # Rangos físicos posibles de cada sensor (fuera de esto la lectura se rechaza)
@@ -53,7 +55,9 @@ SENSORES = {
     "turbidez": {"nombre": "Turbidez", "unidad": "NTU", "min": 0, "max": 3000},
     "ph": {"nombre": "pH", "unidad": "pH", "min": 0, "max": 14},
 }
-NOMBRE_A_CLAVE = {cfg["nombre"]: clave for clave, cfg in SENSORES.items()}
+# Sensores que se muestran en el historial (el pH ya no se muestra)
+HISTORICO_SENSORES = ["temperatura", "nivel_agua", "turbidez"]
+NOMBRE_A_CLAVE = {SENSORES[c]["nombre"]: c for c in HISTORICO_SENSORES}
 
 # En Vercel el panel (carpeta public/) lo sirve el CDN; esta carpeta solo se usa al correr en local.
 app = Flask(__name__, static_folder="public", static_url_path="")
@@ -140,6 +144,15 @@ CREATE TABLE IF NOT EXISTS lecturas (
     ph DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS idx_lecturas_dev_ts ON lecturas(device_id, ts);
+CREATE TABLE IF NOT EXISTS historial (
+    id BIGSERIAL PRIMARY KEY,
+    device_id BIGINT NOT NULL REFERENCES dispositivos(id) ON DELETE CASCADE,
+    ts BIGINT NOT NULL,
+    temperatura DOUBLE PRECISION,
+    nivel_agua DOUBLE PRECISION,
+    turbidez DOUBLE PRECISION
+);
+CREATE INDEX IF NOT EXISTS idx_historial_dev_ts ON historial(device_id, ts);
 CREATE TABLE IF NOT EXISTS intentos_login (
     ip TEXT PRIMARY KEY,
     cantidad INTEGER NOT NULL,
@@ -383,6 +396,21 @@ def recibir_lectura():
         "(SELECT id FROM lecturas WHERE device_id = ? ORDER BY id DESC LIMIT ?)",
         (device_id, device_id, MAX_LECTURAS_POR_DISPOSITIVO),
     )
+    # Historial: se guarda un registro solo si pasaron 2 minutos desde el último
+    ultimo = db.execute(
+        "SELECT ts FROM historial WHERE device_id = ? ORDER BY id DESC LIMIT 1", (device_id,)
+    ).fetchone()
+    if ultimo is None or ahora - ultimo["ts"] >= INTERVALO_HISTORIAL_S:
+        db.execute(
+            "INSERT INTO historial (device_id, ts, temperatura, nivel_agua, turbidez)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (device_id, ahora, valores["temperatura"], valores["nivel_agua"], valores["turbidez"]),
+        )
+        db.execute(
+            "DELETE FROM historial WHERE device_id = ? AND id NOT IN "
+            "(SELECT id FROM historial WHERE device_id = ? ORDER BY id DESC LIMIT ?)",
+            (device_id, device_id, MAX_HISTORIAL_POR_DISPOSITIVO),
+        )
     db.commit()
     return jsonify(ok=True, intervalo_s=5)
 
@@ -443,6 +471,7 @@ def desvincular_dispositivo(device_id):
         return error("Dispositivo no encontrado.", 404)
     db = get_db()
     db.execute("DELETE FROM lecturas WHERE device_id = ?", (device_id,))
+    db.execute("DELETE FROM historial WHERE device_id = ?", (device_id,))
     db.execute("UPDATE dispositivos SET owner_id = NULL WHERE id = ?", (device_id,))
     db.commit()
     return jsonify(ok=True)
@@ -479,17 +508,17 @@ def ultima_lectura():
 @app.get("/api/lecturas")
 @requiere_login
 def historico():
-    """Histórico en filas: una por sensor (Fecha, Sensor, Valor, Estado)."""
+    """Histórico (un registro cada 2 min) en filas: una por sensor (Fecha, Sensor, Valor, Estado)."""
     disp = dispositivo_del_usuario(request.args.get("device_id", type=int))
     if disp is None:
         return error("Dispositivo no encontrado.", 404)
 
     filtro = NOMBRE_A_CLAVE.get(request.args.get("sensor", "Todos"))   # None = todos
-    claves = [filtro] if filtro else list(SENSORES)
+    claves = [filtro] if filtro else HISTORICO_SENSORES
     limite = 100 if filtro else 20
 
     filas = get_db().execute(
-        "SELECT * FROM lecturas WHERE device_id = ? ORDER BY id DESC LIMIT ?",
+        "SELECT * FROM historial WHERE device_id = ? ORDER BY id DESC LIMIT ?",
         (disp["id"], limite),
     ).fetchall()
 

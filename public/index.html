@@ -81,10 +81,6 @@
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>
           <span>Históricos</span>
         </a>
-        <a href="#" class="menu-item" data-view="dispositivos">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.2" r="1"/></svg>
-          <span>Dispositivos</span>
-        </a>
       </nav>
 
       <div class="user-box">
@@ -151,7 +147,7 @@
             </div>
           </article>
 
-          <!-- Temperatura, turbidez y pH -->
+          <!-- Temperatura y turbidez -->
           <div class="instrumentos">
 
             <section class="instrumento">
@@ -190,24 +186,6 @@
               <p id="desc-turbidez" class="instrumento-desc">Esperando conexión.</p>
             </section>
 
-            <section class="instrumento">
-              <header class="instrumento-head">
-                <h2>
-                  <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/></svg>
-                  pH
-                </h2>
-                <span id="tag-ph" class="estado estado-off">Sin datos</span>
-              </header>
-              <div id="val-ph" class="valor">--</div>
-              <div class="escala escala-ph">
-                <span id="ptr-ph" class="marcador" style="visibility: hidden"></span>
-              </div>
-              <div class="escala-rotulos" aria-hidden="true">
-                <span style="left: 46.4%">6.5</span><span style="left: 57.1%">8</span>
-              </div>
-              <p id="desc-ph" class="instrumento-desc">Esperando conexión.</p>
-            </section>
-
           </div>
         </div>
       </section>
@@ -217,7 +195,7 @@
         <div class="page-head">
           <div>
             <h1 id="titulo-historicos">Registros históricos</h1>
-            <p class="page-sub">Últimas lecturas recibidas por WiFi del dispositivo que ves en el panel.</p>
+            <p class="page-sub">Se guarda un registro cada 2 minutos con las lecturas WiFi del dispositivo que ves en el panel.</p>
           </div>
         </div>
 
@@ -226,7 +204,6 @@
           <button class="tab" type="button" data-sensor="Temperatura">Temperatura</button>
           <button class="tab" type="button" data-sensor="Nivel de Agua">Nivel de agua</button>
           <button class="tab" type="button" data-sensor="Turbidez">Turbidez</button>
-          <button class="tab" type="button" data-sensor="pH">pH</button>
         </div>
 
         <div class="tabla-wrap">
@@ -237,25 +214,6 @@
             <tbody id="tabla-historicos-body"></tbody>
           </table>
         </div>
-      </section>
-
-      <!-- ===== DISPOSITIVOS ===== -->
-      <section id="view-dispositivos" class="hidden">
-        <div class="page-head">
-          <div>
-            <h1>Dispositivos</h1>
-            <p class="page-sub">Estaciones conectadas por WiFi. Toca una para verla en el panel.</p>
-          </div>
-          <div class="head-actions">
-            <button id="btn-escanear-dispositivo" class="btn btn-primary" type="button">Vincular por WiFi</button>
-            <button class="btn btn-ghost js-btn-ble" type="button">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg>
-              <span class="btn-texto">Bluetooth</span>
-            </button>
-          </div>
-        </div>
-
-        <div id="dispositivos-grid" class="dispositivos-grid"></div>
       </section>
 
     </main>
