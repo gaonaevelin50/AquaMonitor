@@ -298,7 +298,7 @@ function procesarSensores() {
   else actualizarUI("nivelAgua", n, "Alto", "alerta", n, "Nivel en el límite alto.");
 
   if (tb === null) sinSensor("turbidez");
-  else if (tb <= 30) actualizarUI("turbidez", tb, "Normal", "ok", tb, "Agua transparente.");
+  else if (tb <= 50) actualizarUI("turbidez", tb, "Normal", "ok", tb, "Agua transparente.");
   else actualizarUI("turbidez", tb, "Alta", "alerta", tb, "Agua con alta turbidez.");
 }
 
