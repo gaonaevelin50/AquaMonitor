@@ -41,16 +41,16 @@
 
       <form id="form-registro" class="hidden">
         <h1 class="auth-title">Crear cuenta</h1>
-        <p class="auth-subtitle">Elige un usuario y una contraseña de al menos 4 caracteres.</p>
+        <p class="auth-subtitle">Elige un usuario y una contraseña de al menos 5 caracteres.</p>
 
         <label class="auth-label" for="registro-usuario">Usuario</label>
         <input type="text" id="registro-usuario" class="auth-input" required autocomplete="username">
 
         <label class="auth-label" for="registro-password">Contraseña</label>
-        <input type="password" id="registro-password" class="auth-input" required autocomplete="new-password">
+        <input type="password" id="registro-password" class="auth-input" minlength="5" maxlength="128" required autocomplete="new-password">
 
         <label class="auth-label" for="registro-password2">Repite la contraseña</label>
-        <input type="password" id="registro-password2" class="auth-input" required autocomplete="new-password">
+        <input type="password" id="registro-password2" class="auth-input" minlength="5" maxlength="128" required autocomplete="new-password">
 
         <div id="registro-error" class="auth-error" role="alert"></div>
         <button type="submit" class="btn btn-primary btn-block">Crear cuenta</button>
@@ -81,6 +81,7 @@
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>
           <span>Históricos</span>
         </a>
+        <a href="#" class="menu-item" data-view="dispositivos"><span>Dispositivos</span></a>
       </nav>
 
       <div class="user-box">
@@ -93,6 +94,7 @@
     </header>
 
     <main class="main">
+        <div id="aviso-conexion" class="aviso hidden" role="alert"></div>
 
       <!-- ===== MONITOREO ===== -->
       <section id="view-dashboard">
@@ -110,7 +112,7 @@
           </div>
         </div>
 
-        <div id="aviso-conexion" class="aviso hidden" role="alert"></div>
+
 
         <div id="conexion-banner" class="banner">
           <div>
@@ -133,13 +135,15 @@
             </header>
             <div id="val-nivelAgua" class="tanque-valor">--</div>
             <p id="desc-nivelAgua" class="tanque-desc">Esperando conexión.</p>
+            <p id="distancia-nivelAgua" class="tanque-desc">Distancia: sin datos.</p>
 
             <div class="tanque-visor">
               <div class="tanque-escala" aria-hidden="true">
                 <span style="bottom: 85%">85</span>
                 <span style="bottom: 45%">45</span>
               </div>
-              <div class="tanque-vidrio">
+              <div class="tanque-vidrio" aria-label="Sin lectura válida de nivel de agua">
+                <span id="nivel-sin-lectura" class="nivel-sin-lectura">Sin lectura válida</span>
                 <div id="agua-nivelAgua" class="agua vacio" style="--nivel: 0%"></div>
                 <i class="tanque-linea" style="bottom: 85%"></i>
                 <i class="tanque-linea" style="bottom: 45%"></i>
@@ -181,7 +185,7 @@
                 <span id="ptr-turbidez" class="marcador" style="visibility: hidden"></span>
               </div>
               <div class="escala-rotulos" aria-hidden="true">
-                <span style="left: 30%">30</span>
+                <span style="left: 50%">50</span>
               </div>
               <p id="desc-turbidez" class="instrumento-desc">Esperando conexión.</p>
             </section>
@@ -195,7 +199,7 @@
         <div class="page-head">
           <div>
             <h1 id="titulo-historicos">Registros históricos</h1>
-            <p class="page-sub">Se guarda un registro cada 2 minutos con las lecturas WiFi del dispositivo que ves en el panel.</p>
+            <p class="page-sub">Lecturas WiFi del dispositivo, de la más reciente a la más antigua.</p>
           </div>
         </div>
 
@@ -214,8 +218,15 @@
             <tbody id="tabla-historicos-body"></tbody>
           </table>
         </div>
+        <button id="btn-mas-historicos" class="btn btn-ghost btn-small hidden" type="button">
+          Cargar más
+        </button>
       </section>
 
+      <section id="view-dispositivos" class="hidden">
+        <div class="page-head"><h1>Mis dispositivos</h1><button id="btn-refrescar-dispositivos" class="btn btn-ghost" type="button">Actualizar lista</button><button id="btn-anadir-dispositivo" class="btn btn-primary" type="button">Añadir mediante código</button></div>
+        <div id="lista-mis-dispositivos" class="dispositivos-grid"></div>
+      </section>
     </main>
   </div>
 
@@ -223,13 +234,20 @@
   <div id="modal-scanner" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-titulo">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 id="scanner-titulo">Dispositivos en tu red WiFi</h2>
+        <h2 id="scanner-titulo">Vincular tu ESP32</h2>
         <button id="btn-cerrar-modal" class="icon-btn" type="button" aria-label="Cerrar">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
-      <div class="scanner-loader" aria-hidden="true"></div>
-      <div id="lista-dispositivos-encontrados"></div>
+      <p>Activa la vinculación en tu ESP32. Consulta el código temporal en su portal local protegido o en el Monitor Serial.</p>
+      <form id="form-vincular">
+        <label class="auth-label" for="vincular-codigo">Código temporal</label>
+        <input id="vincular-codigo" class="auth-input" required minlength="12" maxlength="14" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <label class="auth-label" for="vincular-nombre">Nombre del dispositivo</label>
+        <input id="vincular-nombre" class="auth-input" required maxlength="40" autocomplete="off">
+        <p id="vincular-error" class="auth-error" role="alert"></p>
+        <button id="btn-vincular-codigo" class="btn btn-primary" type="submit">Vincular dispositivo</button>
+      </form>
     </div>
   </div>
 

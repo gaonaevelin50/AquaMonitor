@@ -5,3 +5,81 @@ __pycache__/
 .vercel/
 *.db
 secret.key
+esp32/aquamonitor_esp32/secrets.h
+
+# Bases de datos locales
+*.sqlite
+*.sqlite3
+*.sqbpro
+
+# Datos de prueba
+data/
+
+# Configuraci�n local
+.vscode/
+
+# Archivos temporales
+*.save
+*.log
+
+# Entornos Python adicionales
+venv/
+
+# Variables y credenciales locales (excepto plantillas)
+.env*
+!.env.example
+secrets.h
+!secrets.h.example
+
+# Cachés y artefactos de herramientas
+*.pyo
+*.pyd
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db-shm
+*.db-wal
+*.tmp
+*.temp
+*.bak
+
+# Referencias heredadas no usadas por la aplicación actual.
+# Se conservan en el disco, pero no se publican junto al despliegue.
+/app_moderno.py
+/config.py
+/create_database.py
+/generator.py
+/mail.py
+/Procfile
+/about.txt
+/static/
+/templates/
+/images/
+/espduino32_codes/
+/EspduinoWQMS/
+
+# Local audit snapshots and isolated runtime
+.audit-backups/
+.test-runtime/
+
+.vercel
+# Credenciales, llaves y archivos locales de autenticación
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.crt
+id_rsa
+id_ed25519
+.npmrc
+.netrc
+credentials.json
+credentials.*.json
+service-account*.json
+secrets.json
+secrets.yaml
+secrets.yml
+*.dump
+*.db-journal

@@ -1,52 +1,78 @@
-"""
-Simulador de ESP32 para probar AquaMonitor SIN hardware.
-
-Envía lecturas falsas cada pocos segundos, igual que lo haría el ESP32 real.
-Uso:
-    python simulador_esp32.py
-    python simulador_esp32.py --alertas        (valores que se salen de rango)
-    python simulador_esp32.py --host https://tu-proyecto.vercel.app --key TU_API_KEY --mac AA:BB:CC:DD:EE:02
+"""Simulador de desarrollo del protocolo individual; no valida sensores físicos.
+Nunca utiliza ni acepta AQUAMONITOR_API_KEY. No ejecutarlo contra producción sin autorización.
 """
 import argparse
 import json
+from pathlib import Path
 import random
+import secrets
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 
-parser = argparse.ArgumentParser(description="Simulador de ESP32 para AquaMonitor")
-parser.add_argument("--host", default="http://localhost:5000", help="Dirección del servidor")
-parser.add_argument("--key", default="AQUAMONITOR_API_KEY_PLACEHOLDER", help="API key (igual a la de app.py)")
-parser.add_argument("--mac", default="AA:BB:CC:DD:EE:01", help="MAC falsa del dispositivo")
-parser.add_argument("--intervalo", type=float, default=5, help="Segundos entre lecturas")
-parser.add_argument("--alertas", action="store_true", help="Variar más para provocar alertas")
-args = parser.parse_args()
 
-paso = 6 if args.alertas else 1
-valores = {"temperatura": 23.0, "nivel_agua": 70.0, "turbidez": 15.0, "ph": 7.2}
-limites = {"temperatura": (10, 35), "nivel_agua": (10, 100), "turbidez": (0, 100), "ph": (4, 10)}
-variacion = {"temperatura": 0.4, "nivel_agua": 1.5, "turbidez": 2.0, "ph": 0.1}
-
-print(f"Simulando {args.mac} -> {args.host}  (Ctrl+C para detener)")
-while True:
-    for k in valores:
-        valores[k] += random.uniform(-1, 1) * variacion[k] * paso
-        valores[k] = min(max(valores[k], limites[k][0]), limites[k][1])
-
-    cuerpo = {k: round(v, 1) for k, v in valores.items()}
-    cuerpo.update({"mac": args.mac, "rssi": random.randint(-75, -50)})
-
-    peticion = urllib.request.Request(
-        args.host.rstrip("/") + "/api/lecturas",
-        data=json.dumps(cuerpo).encode(),
-        headers={"Content-Type": "application/json", "X-API-Key": args.key},
-        method="POST",
-    )
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--host',default='http://127.0.0.1:5000')
+    parser.add_argument('--state',default='.test-runtime/simulator-identity.json')
+    parser.add_argument('--pair',action='store_true',help='Solicitar un código temporal nuevo')
+    parser.add_argument('--intervalo',type=float,default=5)
+    args=parser.parse_args()
+    origin=urllib.parse.urlsplit(args.host)
+    if origin.scheme!='https' and not (origin.scheme=='http' and origin.hostname in {'localhost','127.0.0.1'}):
+        parser.error('Solo se permite HTTP para localhost; fuera del equipo usa HTTPS.')
+    if args.intervalo<5:
+        parser.error('El intervalo mínimo es de 5 segundos.')
+    state_path=Path(args.state)
+    if state_path.exists():
+        state=json.loads(state_path.read_text(encoding='utf-8'))
+    else:
+        state=dict(config='ac_'+secrets.token_hex(32),measurement='am_'+secrets.token_hex(32),
+                   registration_id=str(uuid.uuid4()),generation=str(uuid.uuid4()))
+    def save():
+        state_path.parent.mkdir(parents=True,exist_ok=True)
+        temp=state_path.with_suffix('.tmp')
+        temp.write_text(json.dumps(state),encoding='utf-8')
+        temp.replace(state_path)
+    save()
+    def call(route,payload=None,token=None):
+        request=urllib.request.Request(args.host.rstrip('/')+'/api'+route,
+            data=json.dumps(payload).encode() if payload is not None else None,
+            headers={'Content-Type':'application/json','Authorization':'Bearer '+(token or state['config'])})
+        with urllib.request.urlopen(request,timeout=10) as response:
+            return json.load(response)
     try:
-        with urllib.request.urlopen(peticion, timeout=5) as resp:
-            print("OK ", resp.status, cuerpo)
-    except urllib.error.HTTPError as e:
-        print("ERROR", e.code, e.read().decode())
-    except urllib.error.URLError as e:
-        print("No se pudo conectar al servidor:", e.reason)
-    time.sleep(args.intervalo)
+        if not state.get('public_id'):
+            reply=call('/equipos/registro',dict(registration_id=state['registration_id'],generation=state['generation'],
+                measurement_token=state['measurement'],mac='AA:BB:CC:DD:EE:01'))
+            state['public_id']=reply['public_id']; save()
+        if args.pair:
+            code=call('/equipos/vinculacion',dict(request_id=str(uuid.uuid4())))
+            print('Código temporal de vinculación:',code['code'])
+        while True:
+            status=call('/equipos/estado')
+            if status['linked'] and (status['recovery_authorized'] or state.get('pending_token')):
+                if not state.get('pending_token'):
+                    state['pending_token']='am_'+secrets.token_hex(32)
+                    state['pending_generation']=str(uuid.uuid4()); save()
+                call('/equipos/credenciales/medicion',dict(generation=state['pending_generation'],measurement_token=state['pending_token']))
+                state['measurement']=state.pop('pending_token'); state['generation']=state.pop('pending_generation'); save()
+                status['measurement_enabled']=True
+            if status['measurement_enabled']:
+                call('/lecturas',dict(temperatura=round(random.uniform(20,25),1),nivel_agua=70,turbidez=15,rssi=-60),token=state['measurement'])
+                print('Lectura simulada enviada.')
+            else:
+                print('Esperando vinculación o recuperación autorizada.')
+            time.sleep(args.intervalo)
+    except urllib.error.HTTPError as exc:
+        print('Solicitud rechazada, HTTP',exc.code,'; no se muestran detalles privados.')
+    except (urllib.error.URLError,TimeoutError):
+        print('Conexión no disponible. Conserva el archivo de identidad y vuelve a ejecutar.')
+    except KeyboardInterrupt:
+        print('Simulador detenido; identidad conservada.')
+
+
+if __name__=='__main__':
+    main()
