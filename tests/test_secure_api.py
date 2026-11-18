@@ -179,6 +179,32 @@ class SecureIntegration(unittest.TestCase):
             self.assertEqual(client.get('/api/lecturas/graficas',query_string=dict(asignacion_id=other['asignacion_id'])).status_code,404)
         self.assertTrue(self.a.get('/api/dispositivos').json['dispositivos'][0]['anterior'])
 
+    def test_viewer_can_read_only_the_granted_assignment(self):
+        device = self.claim()
+        assignment = device["asignacion_id"]
+        self.assertEqual(self.reading(temperatura=23).status_code, 200)
+        with psycopg.connect(self.dsn) as c:
+            c.execute("INSERT INTO usuarios(usuario,password_hash,creado_en) VALUES (%s,%s,1)",
+                      ("profesor_consulta",generate_password_hash(secrets.token_hex(32))))
+        self.app.config.update(VIEWER_ASSIGNMENT_ID=str(assignment),
+                               VIEWER_PASSWORD_HASH=generate_password_hash(PASSWORD))
+        client = self.app.test_client()
+        response = client.post("/api/login",json={"usuario":"profesor_consulta","password":PASSWORD})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json["solo_consulta"])
+        self.assertIn("aquamonitor_session=v_",response.headers["Set-Cookie"])
+        self.assertTrue(client.get("/api/me").json["solo_consulta"])
+        self.assertEqual([d["asignacion_id"] for d in client.get("/api/dispositivos").json["dispositivos"]], [assignment])
+        for path in ("/api/lecturas", "/api/lecturas/ultima", "/api/lecturas/graficas"):
+            self.assertEqual(client.get(path,query_string={"asignacion_id":assignment}).status_code, 200)
+            self.assertEqual(client.get(path,query_string={"asignacion_id":assignment+1}).status_code, 404)
+        headers = {"X-CSRF-Token":response.json["csrf_token"]}
+        self.assertEqual(client.post("/api/dispositivos/vincular",json={},headers=headers).status_code, 403)
+        self.assertEqual(client.post(f'/api/dispositivos/{device["id"]}/revocar',json={},headers=headers).status_code, 403)
+        self.assertEqual(self.reading(temperatura=24).status_code, 200)
+        self.assertEqual(client.post("/api/logout",json={},headers=headers).status_code, 200)
+        self.assertEqual(client.get("/api/me").status_code, 401)
+
     def test_isolation_password_csrf_and_logout(self):
         d=self.claim()
         self.assertEqual(self.b.get('/api/dispositivos').json['dispositivos'],[])

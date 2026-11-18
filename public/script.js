@@ -6,6 +6,7 @@
 // =====================================================
 
 let csrfToken = null;
+let soloConsulta = false;
 let sessionVersion = 0;
 // Remove obsolete browser-readable sessions from the earlier version.
 localStorage.removeItem("aquamonitor_token");
@@ -156,6 +157,7 @@ async function cerrarSesion(servidor = false) {
     }
   }
   csrfToken = null;
+  soloConsulta = false;
   sessionVersion++;
   solicitudHistorico++;
   historicoCargando = false;
@@ -195,7 +197,11 @@ function mostrarApp(usuario) {
   document.getElementById("user-avatar").textContent = usuario.charAt(0).toUpperCase();
 }
 
-async function entrarALaApp(usuario) {
+async function entrarALaApp(usuario, accesoConsulta = false) {
+  soloConsulta = accesoConsulta;
+  for (const id of ["btn-anadir-dispositivo", "btn-banner-wifi"]) {
+    document.getElementById(id).classList.toggle("hidden", soloConsulta);
+  }
   mostrarApp(usuario);
   ocultarAviso();
   mostrarSinDatos("Esperando conexión.");
@@ -218,7 +224,7 @@ formLogin.addEventListener("submit", async (e) => {
       sinToken: true
     });
     guardarSesion(datos);
-    await entrarALaApp(datos.usuario);
+    await entrarALaApp(datos.usuario, datos.solo_consulta === true);
   } catch (err) {
     errEl.textContent = err.message;
   }
@@ -625,7 +631,7 @@ function renderizarMisDispositivos() {
   const list = document.getElementById("lista-mis-dispositivos");
   list.replaceChildren();
   if (!dispositivos.length) {
-    list.appendChild(crearEl("p", "dispositivos-vacio", "Aún no tienes dispositivos. Añade tu ESP32 mediante su código temporal."));
+    list.appendChild(crearEl("p", "dispositivos-vacio", soloConsulta ? "No tienes dispositivos asignados para consulta." : "Aún no tienes dispositivos. Añade tu ESP32 mediante su código temporal."));
   }
   dispositivos.forEach((device) => {
     const card = crearEl("article", "dispositivo-card");
@@ -639,7 +645,7 @@ function renderizarMisDispositivos() {
       irAVista(device.anterior ? "historicos" : "dashboard");
     });
     card.appendChild(select);
-    if (!device.anterior) {
+    if (!soloConsulta && !device.anterior) {
       const details = crearEl("details", "device-actions");
       details.appendChild(crearEl("summary", "", "Gestionar dispositivo"));
       details.appendChild(crearEl("p", "", "Confirma tu contraseña. Revocar detiene los envíos; recuperar los autoriza durante 10 minutos. Liberar permite transferir el equipo y conserva tu historial."));
@@ -803,7 +809,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     const yo = await api("/api/me", { sinToken: true });
     csrfToken = yo.csrf_token;
-    await entrarALaApp(yo.usuario);
+    await entrarALaApp(yo.usuario, yo.solo_consulta === true);
   } catch (err) {
     mostrarLogin();
   }

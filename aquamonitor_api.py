@@ -16,6 +16,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 api = Blueprint("api", __name__, url_prefix="/api")
 COOKIE = "aquamonitor_session"
+VIEWER_USERNAME = "profesor_consulta"
 SENSORS = {
     "temperatura": ("Temperatura", "°C", -50, 100),
     "nivel_agua": ("Nivel de Agua", "%", 0, 100),
@@ -102,16 +103,37 @@ def csrf_for(token):
     return hmac.new(current_app.config["SECRET_KEY"].encode(), ("csrf:" + token).encode(), hashlib.sha256).hexdigest()
 
 
+def viewer_assignment():
+    value = str(current_app.config.get("VIEWER_ASSIGNMENT_ID", ""))
+    if current_app.config.get("VIEWER_PASSWORD_HASH") and re.fullmatch(r"[1-9][0-9]{0,17}", value):
+        return int(value)
+    return None
+
+
+def session_hash(token):
+    if token.startswith("v_"):
+        key = current_app.config["SECRET_KEY"].encode()
+        binding = current_app.config.get("VIEWER_PASSWORD_HASH", "")
+        return hmac.new(key, ("viewer:" + binding + ":" + token).encode(), hashlib.sha256).hexdigest()
+    return digest(token)
+
+
 def login_required(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
         token = request.cookies.get(COOKIE, "")
-        if not re.fullmatch(r"[0-9a-f]{64}", token):
+        if not re.fullmatch(r"(?:v_)?[0-9a-f]{64}", token):
             fail("Inicia sesión.", 401)
         row = db().execute("""SELECT u.id,u.usuario FROM sesiones_usuario s JOIN usuarios u ON u.id=s.usuario_id
-            WHERE s.token_hash=%s AND s.revocado_en IS NULL AND s.expira_en>%s""", (digest(token), now())).fetchone()
+            WHERE s.token_hash=%s AND s.revocado_en IS NULL AND s.expira_en>%s""", (session_hash(token), now())).fetchone()
         if row is None:
             fail("La sesión expiró o fue cerrada.", 401)
+        viewer = token.startswith("v_")
+        if viewer and (row["usuario"] != VIEWER_USERNAME or viewer_assignment() is None):
+            fail("La sesión de consulta ya no está disponible.", 401)
+        if viewer and request.method not in {"GET", "HEAD", "OPTIONS"} and fn.__name__ != "logout":
+            fail("La cuenta de consulta es de solo lectura.", 403)
+        g.viewer_assignment = viewer_assignment() if viewer else None
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             if not hmac.compare_digest(request.headers.get("X-CSRF-Token", ""), csrf_for(token)):
                 fail("Verificación de sesión no válida. Recarga la página.", 403)
@@ -132,13 +154,13 @@ def same_origin_writes():
             fail("Origen no permitido.", 403)
 
 
-def start_session(user_id, username):
-    token = secrets.token_hex(32)
+def start_session(user_id, username, viewer=False):
+    token = ("v_" if viewer else "") + secrets.token_hex(32)
     ts = now()
     db().execute("INSERT INTO sesiones_usuario(token_hash,usuario_id,creado_en,expira_en) VALUES(%s,%s,%s,%s)",
-                 (digest(token), user_id, ts, ts+86400))
+                 (session_hash(token), user_id, ts, ts+86400))
     db().commit()
-    response = jsonify(usuario=username, csrf_token=csrf_for(token))
+    response = jsonify(usuario=username, csrf_token=csrf_for(token), solo_consulta=viewer)
     response.set_cookie(COOKIE, token, max_age=86400, secure=current_app.config["SESSION_COOKIE_SECURE"],
                         httponly=True, samesite="Strict", path="/")
     return response
@@ -158,22 +180,24 @@ def login():
     username, password = account_fields(body())
     limit("login-account", username.lower(), 10, 60)
     row = db().execute("SELECT * FROM usuarios WHERE usuario=%s", (username,)).fetchone()
-    valid = check_password_hash(row["password_hash"] if row else DUMMY_HASH, password)
+    viewer = username == VIEWER_USERNAME and viewer_assignment() is not None
+    password_hash = current_app.config["VIEWER_PASSWORD_HASH"] if viewer else row["password_hash"] if row else DUMMY_HASH
+    valid = check_password_hash(password_hash, password)
     if not row or not valid:
         fail("Usuario o contraseña incorrectos.", 401)
-    return start_session(row["id"], row["usuario"])
+    return start_session(row["id"], row["usuario"], viewer=viewer)
 
 
 @api.get("/me")
 @login_required
 def me():
-    return jsonify(usuario=g.user["usuario"], csrf_token=csrf_for(request.cookies[COOKIE]))
+    return jsonify(usuario=g.user["usuario"], csrf_token=csrf_for(request.cookies[COOKIE]), solo_consulta=g.viewer_assignment is not None)
 
 
 @api.post("/logout")
 @login_required
 def logout():
-    db().execute("UPDATE sesiones_usuario SET revocado_en=%s WHERE token_hash=%s", (now(), digest(request.cookies[COOKIE])))
+    db().execute("UPDATE sesiones_usuario SET revocado_en=%s WHERE token_hash=%s", (now(), session_hash(request.cookies[COOKIE])))
     db().commit()
     response = jsonify(ok=True)
     response.delete_cookie(COOKIE, path="/", secure=current_app.config["SESSION_COOKIE_SECURE"], httponly=True, samesite="Strict")
@@ -314,9 +338,11 @@ def claim():
 @api.get("/dispositivos")
 @login_required
 def devices():
-    rows = db().execute("""SELECT a.*,d.public_id,d.ultima_conexion,d.rssi,d.bloqueado,
+    viewer = g.viewer_assignment
+    scope = "a.id=%s" if viewer is not None else "a.owner_id=%s"
+    rows = db().execute(f"""SELECT a.*,d.public_id,d.ultima_conexion,d.rssi,d.bloqueado,
         EXISTS(SELECT 1 FROM credenciales_dispositivo c WHERE c.asignacion_id=a.id AND c.proposito='medicion' AND c.revocado_en IS NULL) AS envios_activos
-        FROM asignaciones_dispositivo a JOIN dispositivos d ON d.id=a.device_id WHERE a.owner_id=%s ORDER BY a.id DESC""", (g.user["id"],)).fetchall()
+        FROM asignaciones_dispositivo a JOIN dispositivos d ON d.id=a.device_id WHERE {scope} ORDER BY a.id DESC""", (viewer if viewer is not None else g.user["id"],)).fetchall()
     return jsonify(dispositivos=[dict(id=r["device_id"],asignacion_id=r["id"],nombre=r["nombre"],
         public_id=str(r["public_id"]),anterior=r["fin"] is not None,inicio=r["inicio"],fin=r["fin"],
         ultima=r["ultima_conexion"] if r["fin"] is None else r["fin"],
@@ -490,10 +516,14 @@ def receive():
 
 def user_assignment():
     assignment_id = request.args.get("asignacion_id",type=int)
-    row = db().execute("""SELECT a.*,d.ultima_conexion,d.bloqueado,
+    viewer = g.viewer_assignment
+    if viewer is not None and assignment_id != viewer:
+        fail("Asignación no encontrada.",404)
+    scope = "a.id=%s" if viewer is not None else "a.owner_id=%s"
+    row = db().execute(f"""SELECT a.*,d.ultima_conexion,d.bloqueado,
         EXISTS(SELECT 1 FROM credenciales_dispositivo c WHERE c.asignacion_id=a.id AND c.proposito='medicion' AND c.revocado_en IS NULL) AS envios_activos
         FROM asignaciones_dispositivo a JOIN dispositivos d ON d.id=a.device_id
-        WHERE a.id=%s AND a.owner_id=%s""",(assignment_id,g.user["id"])).fetchone()
+        WHERE a.id=%s AND {scope}""",(assignment_id,viewer if viewer is not None else g.user["id"])).fetchone()
     if not row:
         fail("Asignación no encontrada.",404)
     return row
