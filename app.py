@@ -23,6 +23,7 @@ def create_app(overrides=None):
         DB_SCHEMA_READY=os.environ.get("AQUAMONITOR_DB_SCHEMA_READY", "").lower() in {"true", "1", "yes"},
         DB_SSLMODE=os.environ.get("AQUAMONITOR_DB_SSLMODE", "verify-full"),
         DB_SSLROOTCERT=os.environ.get("AQUAMONITOR_DB_SSLROOTCERT", ""),
+        PUBLIC_ASSIGNMENT_ID=os.environ.get("AQUAMONITOR_PUBLIC_ASSIGNMENT_ID", ""),
         SESSION_COOKIE_SECURE=production,
         MAX_CONTENT_LENGTH=8192,
         SEND_FILE_MAX_AGE_DEFAULT=0,
@@ -64,7 +65,9 @@ def create_app(overrides=None):
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-        if request.path.startswith("/api/"):
+        if request.path == "/api/publica/lecturas" and response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=0, s-maxage=5"
+        elif request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         if production:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"

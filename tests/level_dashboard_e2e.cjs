@@ -15,7 +15,7 @@ const {chromium}=require(path.join(process.cwd(),'.test-runtime/ui/node_modules/
    if(p==='/api/lecturas/ultima')return route.fulfill(fail?{status:503,json:{detail:'Simulated connection failure'}}:{json:reading});
    return route.fulfill({json:{registros:[]}});
   });
-  await page.goto(process.env.AQUAMONITOR_TEST_ORIGIN || 'http://127.0.0.1:5000/',{waitUntil:'networkidle'});
+  await page.goto(new URL('/admin.html', process.env.AQUAMONITOR_TEST_ORIGIN || 'http://127.0.0.1:5000/').href,{waitUntil:'networkidle'});
   await page.locator('#app').waitFor({state:'visible'});
   for(const value of [0,25,50,71.2,75,95,100]) {
    reading={...reading,nivel_agua:value,distancia_cm:value===0?7.8:value===25?6.35:value===50?4.9:value===71.2?3.67:value===75?3.45:value===95?2.29:2.0,edad_s:0,ts:Math.floor(Date.now()/1000)};

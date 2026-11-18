@@ -31,7 +31,7 @@ async function device(route, body, token=config, method='POST') {
       await page.locator('#lista-mis-dispositivos > *').first().waitFor({state:'visible'});
     }
 
-    await page.goto(origin,{waitUntil:"networkidle"});
+    await page.goto(new URL("/admin.html", origin).href,{waitUntil:"networkidle"});
     await page.locator('#ir-a-registro').click();
     await page.locator('#registro-usuario').fill('ui_'+crypto.randomBytes(5).toString('hex'));
     await page.locator('#registro-password').fill(password);

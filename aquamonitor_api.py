@@ -515,6 +515,38 @@ def user_assignment():
     return row
 
 
+@api.get("/publica/lecturas")
+def public_readings():
+    """Publish only the station selected by the operator."""
+    assignment = current_app.config["PUBLIC_ASSIGNMENT_ID"]
+    if not re.fullmatch(r"[1-9][0-9]{0,17}", str(assignment)):
+        fail("Las mediciones p?blicas a?n no est?n configuradas.", 503)
+    rows = db().execute("""
+        SELECT l.ts, l.temperatura, l.nivel_agua, l.turbidez,
+               (to_jsonb(l)->>'distancia_cm')::double precision AS distancia_cm,
+               to_jsonb(l)->>'nivel_calibracion' AS nivel_calibracion
+        FROM lecturas l
+        WHERE l.asignacion_id = %s
+          AND EXISTS (SELECT 1 FROM asignaciones_dispositivo a
+                      WHERE a.id = l.asignacion_id AND a.fin IS NULL)
+        ORDER BY l.ts DESC, l.id DESC LIMIT 120
+    """, (int(assignment),)).fetchall()
+    readings = []
+    for row in reversed(rows):
+        temperature = row["temperatura"]
+        level = row["nivel_agua"]
+        distance = row["distancia_cm"]
+        turbidity = row["turbidez"]
+        readings.append({
+            "ts": row["ts"],
+            "temperatura": temperature if classify_temperature(temperature) == "valida" else None,
+            "nivel_agua": level if level_status(level, distance, row["nivel_calibracion"]) == "valida" else None,
+            "distancia_cm": distance if distance is not None and math.isfinite(distance) and 2 <= distance <= 400 else None,
+            "turbidez": turbidity if turbidity is not None and math.isfinite(turbidity) and 0 <= turbidity <= 3000 else None,
+        })
+    return jsonify(lecturas=readings)
+
+
 @api.get("/lecturas/ultima")
 @login_required
 def latest():
