@@ -144,28 +144,12 @@ def start_session(user_id, username):
     return response
 
 
-def account_fields(data, registration=False):
+def account_fields(data):
     username = string(data, "usuario", 3, 30).strip()
-    password = string(data, "password", 5 if registration else 1, 128)
+    password = string(data, "password", 1, 128)
     if not re.fullmatch(r"[A-Za-z0-9_.-]{3,30}", username):
         fail("Usuario no válido: utiliza de 3 a 30 letras, números, punto, guion o guion bajo.")
     return username, password
-
-
-@api.post("/registro")
-def register_user():
-    limit("register-ip", client_ip(), 10, 3600)
-    username, password = account_fields(body(), True)
-    import psycopg
-    try:
-        row = db().execute("INSERT INTO usuarios(usuario,password_hash,creado_en) VALUES(%s,%s,%s) RETURNING id",
-                           (username, generate_password_hash(password), now())).fetchone()
-        response = start_session(row["id"], username)
-        response.status_code = 201
-        return response
-    except psycopg.errors.UniqueViolation:
-        db().rollback()
-        fail("El usuario ya existe.", 409)
 
 
 @api.post("/login")
@@ -515,22 +499,18 @@ def user_assignment():
     return row
 
 
-@api.get("/publica/lecturas")
-def public_readings():
-    """Publish only the station selected by the operator."""
-    assignment = current_app.config["PUBLIC_ASSIGNMENT_ID"]
-    if not re.fullmatch(r"[1-9][0-9]{0,17}", str(assignment)):
-        fail("Las mediciones p?blicas a?n no est?n configuradas.", 503)
+@api.get("/lecturas/graficas")
+@login_required
+def history_charts():
+    assignment = user_assignment()
     rows = db().execute("""
         SELECT l.ts, l.temperatura, l.nivel_agua, l.turbidez,
                (to_jsonb(l)->>'distancia_cm')::double precision AS distancia_cm,
                to_jsonb(l)->>'nivel_calibracion' AS nivel_calibracion
         FROM lecturas l
         WHERE l.asignacion_id = %s
-          AND EXISTS (SELECT 1 FROM asignaciones_dispositivo a
-                      WHERE a.id = l.asignacion_id AND a.fin IS NULL)
         ORDER BY l.ts DESC, l.id DESC LIMIT 120
-    """, (int(assignment),)).fetchall()
+    """, (assignment["id"],)).fetchall()
     readings = []
     for row in reversed(rows):
         temperature = row["temperatura"]

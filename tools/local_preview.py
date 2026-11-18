@@ -5,6 +5,7 @@ import sys
 import uuid
 import psycopg
 from psycopg import sql
+from werkzeug.security import generate_password_hash
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
@@ -18,6 +19,8 @@ dsn=f'host=127.0.0.1 port=55439 user=aquamonitor_test dbname={name} sslmode=disa
 with psycopg.connect(dsn) as c:
     for migration in ['001_initial_schema.sql','002_secure_devices.sql']:
         c.execute((ROOT/'migrations'/migration).read_text(encoding='utf-8'),prepare=False)
+    c.execute("INSERT INTO usuarios(usuario,password_hash,creado_en) VALUES (%s,%s,1)",
+              ("ui_test", generate_password_hash("local-ui-test-password-123")))
 app=create_app(dict(DATABASE_URL=dsn,DB_SCHEMA_READY=True,DB_SSLMODE='disable',
     SECRET_KEY=secrets.token_hex(32),PAIRING_PEPPER=secrets.token_hex(32),SESSION_COOKIE_SECURE=False))
 print('Disposable local UI database:',name,flush=True)

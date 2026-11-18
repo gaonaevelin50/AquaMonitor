@@ -31,12 +31,10 @@ async function device(route, body, token=config, method='POST') {
       await page.locator('#lista-mis-dispositivos > *').first().waitFor({state:'visible'});
     }
 
-    await page.goto(new URL("/admin.html", origin).href,{waitUntil:"networkidle"});
-    await page.locator('#ir-a-registro').click();
-    await page.locator('#registro-usuario').fill('ui_'+crypto.randomBytes(5).toString('hex'));
-    await page.locator('#registro-password').fill(password);
-    await page.locator('#registro-password2').fill(password);
-    await page.locator('#form-registro button[type=submit]').click();
+    await page.goto(origin,{waitUntil:"networkidle"});
+    await page.locator('#login-usuario').fill('ui_test');
+    await page.locator('#login-password').fill(password);
+    await page.locator('#form-login button[type=submit]').click();
     await page.locator('#app').waitFor({state:'visible'});
     const cookies=await context.cookies();
     assert.ok(cookies.find(c=>c.name==='aquamonitor_session' && c.httpOnly && c.sameSite==='Strict'));
@@ -87,6 +85,6 @@ async function device(route, body, token=config, method='POST') {
     await page.locator('#auth-screen').waitFor({state:'visible'});
     assert.equal((await context.cookies()).some(c=>c.name==='aquamonitor_session'),false);
     assert.deepEqual(errors,[]);
-    console.log('PASS: browser registration, HttpOnly session, pairing, telemetry, history, revocation, recovery, release, mobile layout and logout.');
+    console.log('PASS: browser login, HttpOnly session, pairing, telemetry, history, revocation, recovery, release, mobile layout and logout.');
   } finally { await browser.close(); }
 })().catch(err=>{ console.error(err.message); process.exitCode=1; });

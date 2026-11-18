@@ -33,7 +33,7 @@ class LevelProvenance(unittest.TestCase):
     def test_restored_wave_uses_historical_colors_svg_and_shape(self):
         from pathlib import Path
         import subprocess,re
-        old=subprocess.check_output(["git","show","563ca98:public/styles.css"],text=True,encoding="utf-8")
+        old=subprocess.check_output(["git","show","3dcb48f:public/styles.css"],text=True,encoding="utf-8")
         new=Path("public/styles.css").read_text(encoding="utf-8")
         svg=re.search(r'url\("(data:image/svg\+xml,[^"\n]+)',old).group(1)
         self.assertIn(svg,new)

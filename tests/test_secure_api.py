@@ -49,8 +49,11 @@ class SecureIntegration(unittest.TestCase):
         self.a=self.app.test_client(); self.b=self.app.test_client()
         self.csrf={}
         for client,name in [(self.a,'alice'),(self.b,'bob')]:
-            r=client.post('/api/registro',json=dict(usuario=name,password=PASSWORD))
-            self.assertEqual(r.status_code,201)
+            with psycopg.connect(self.dsn) as c:
+                c.execute("INSERT INTO usuarios(usuario,password_hash,creado_en) VALUES (%s,%s,1)",
+                          (name,generate_password_hash(PASSWORD)))
+            r=client.post('/api/login',json=dict(usuario=name,password=PASSWORD))
+            self.assertEqual(r.status_code,200)
             self.csrf[id(client)]=r.json['csrf_token']
         self.config='ac_'+secrets.token_hex(32); self.measure='am_'+secrets.token_hex(32)
         self.generation=str(uuid.uuid4()); self.registration=str(uuid.uuid4())
@@ -170,6 +173,10 @@ class SecureIntegration(unittest.TestCase):
             self.assertEqual(len(r.json['registros']),1)
             self.assertTrue(r.json['registros'][0]['valor'].startswith(str(temp)))
             self.assertEqual(client.get('/api/lecturas',query_string=dict(asignacion_id=other['asignacion_id'])).status_code,404)
+            charts=client.get('/api/lecturas/graficas',query_string=dict(asignacion_id=own['asignacion_id']))
+            self.assertEqual(charts.status_code,200)
+            self.assertEqual([r['temperatura'] for r in charts.json['lecturas']],[temp])
+            self.assertEqual(client.get('/api/lecturas/graficas',query_string=dict(asignacion_id=other['asignacion_id'])).status_code,404)
         self.assertTrue(self.a.get('/api/dispositivos').json['dispositivos'][0]['anterior'])
 
     def test_isolation_password_csrf_and_logout(self):
@@ -207,7 +214,7 @@ class SecureIntegration(unittest.TestCase):
         for data,status in [([1],400),({'temperatura':True},400),({'temperatura':-50},422),({'temperatura':100},422),({'temperatura':10**400},422),({'temperatura':float('nan')},400),({'turbidez':3001},422),({'nivel_agua':-1},422),({'rssi':1,'temperatura':20},400),({},400)]:
             self.assertEqual(self.equipment('/lecturas',data,token=self.measure).status_code,status)
         self.assertEqual(self.reading(temperatura=22,nivel_agua=0,turbidez=100).status_code,200)
-        self.assertEqual(self.a.post('/api/registro',json=[1]).status_code,400)
+        self.assertIn(self.a.post('/api/registro',json=[1]).status_code,(404,405))
         self.assertEqual(self.a.post('/api/login',json={'usuario':'alice','password':'x'},headers={'Origin':'https://evil.invalid'}).status_code,403)
 
     def test_history_pagination_and_legacy_exclusion(self):
@@ -300,9 +307,10 @@ class FirmwareContract(unittest.TestCase):
         text=(ROOT/'esp32/aquamonitor_esp32/aquamonitor_esp32.ino').read_text(encoding='utf-8')
         for name,value in [('pinDatosDS18B20','4'),('trigPin','5'),('echoPin','18'),('pinTurbidez','34'),('ADC_AGUA_CLARA','2205'),('ADC_AGUA_TURBIA','1000'),('NTU_MAXIMO','100.0'),('MUESTRAS','20')]:
             self.assertRegex(text,rf"\b{name}\s*=\s*{re.escape(value)}\s*;")
-        for formula in ['duracion * 0.0343f / 2.0f','raw = suma / MUESTRAS','(float)(ADC_AGUA_CLARA - ADC_AGUA_TURBIA)']:
+        for formula in ['duracion * 0.0343 / 2.0','raw = suma / MUESTRAS','(float)(ADC_AGUA_CLARA - ADC_AGUA_TURBIA)']:
             self.assertIn(formula,text)
-        self.assertIn('AquaMonitorNivel::calcularPorcentaje',text)
+        self.assertIn('(DIST_SENSOR_FONDO_CM - distanciaCm)',text)
+        self.assertIn('(DIST_SENSOR_FONDO_CM - DIST_SENSOR_LLENO_CM) * 100.0',text)
         self.assertIn('#include "water_level.h"',text)
         self.assertNotIn('setInsecure(',text)
         network=(ROOT/'esp32/aquamonitor_esp32/secure_network.h').read_text(encoding='utf-8') if (ROOT/'esp32/aquamonitor_esp32/secure_network.h').exists() else text

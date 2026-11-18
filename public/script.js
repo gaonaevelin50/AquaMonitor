@@ -134,12 +134,11 @@ document.addEventListener("keydown", (e) => {
 });
 
 // -----------------------------------------------------
-// ACCESO (login y registro)
+// ACCESO
 // -----------------------------------------------------
 const authScreen = document.getElementById("auth-screen");
 const appEl = document.getElementById("app");
 const formLogin = document.getElementById("form-login");
-const formRegistro = document.getElementById("form-registro");
 
 function guardarSesion(datos) {
   csrfToken = datos.csrf_token;
@@ -161,6 +160,7 @@ async function cerrarSesion(servidor = false) {
   solicitudHistorico++;
   historicoCargando = false;
   document.getElementById("tabla-historicos-body").replaceChildren();
+  renderizarGraficas([]);
   document.getElementById("lista-mis-dispositivos").replaceChildren();
   ultimoTimestampLectura = null;
   mostrarSinDatos("Inicia sesión.");
@@ -185,9 +185,7 @@ function mostrarLogin() {
   authScreen.classList.remove("hidden");
   formLogin.classList.remove("hidden");
   formLogin.reset();
-  formRegistro.classList.add("hidden");
   document.getElementById("login-error").textContent = "";
-  document.getElementById("registro-error").textContent = "";
 }
 
 function mostrarApp(usuario) {
@@ -207,18 +205,6 @@ async function entrarALaApp(usuario) {
   iniciarLecturas();
 }
 
-document.getElementById("ir-a-registro").addEventListener("click", (e) => {
-  e.preventDefault();
-  formLogin.classList.add("hidden");
-  formRegistro.classList.remove("hidden");
-});
-
-document.getElementById("ir-a-login").addEventListener("click", (e) => {
-  e.preventDefault();
-  formRegistro.classList.add("hidden");
-  formLogin.classList.remove("hidden");
-});
-
 formLogin.addEventListener("submit", async (e) => {
   e.preventDefault();
   const errEl = document.getElementById("login-error");
@@ -229,31 +215,6 @@ formLogin.addEventListener("submit", async (e) => {
     const datos = await api("/api/login", {
       method: "POST",
       body: JSON.stringify({ usuario, password }),
-      sinToken: true
-    });
-    guardarSesion(datos);
-    await entrarALaApp(datos.usuario);
-  } catch (err) {
-    errEl.textContent = err.message;
-  }
-});
-
-formRegistro.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const errEl = document.getElementById("registro-error");
-  errEl.textContent = "";
-  const usuario = document.getElementById("registro-usuario").value.trim();
-  const p1 = document.getElementById("registro-password").value;
-  const p2 = document.getElementById("registro-password2").value;
-
-  if (p1 !== p2) {
-    errEl.textContent = "Las contraseñas no coinciden.";
-    return;
-  }
-  try {
-    const datos = await api("/api/registro", {
-      method: "POST",
-      body: JSON.stringify({ usuario, password: p1 }),
       sinToken: true
     });
     guardarSesion(datos);
@@ -772,6 +733,7 @@ async function cargarHistoricos(reiniciar = true) {
   const solicitud = ++solicitudHistorico;
   ultimaRecargaHistoricos = Date.now();
   if (!dispositivoActivoId) {
+    renderizarGraficas([]);
     cursorHistorico = null;
     historicoHaCargadoMas = false;
     historicoCargando = false;
@@ -800,8 +762,10 @@ async function cargarHistoricos(reiniciar = true) {
       parametros.set("snapshot_id", cursorHistorico.snapshot_id);
     }
     const url = `/api/lecturas?${parametros}`;
-    const datos = await api(url);
+    const graficas = reiniciar ? api("/api/lecturas/graficas?" + new URLSearchParams({ asignacion_id: dispositivoActivoId })).catch(() => null) : null;
+    const [datos, serie] = await Promise.all([api(url), graficas]);
     if (solicitud !== solicitudHistorico) return;
+    if (reiniciar) renderizarGraficas(serie?.lecturas || []);
     renderizarTablaHistoricos(datos.registros, !reiniciar);
     cursorHistorico = datos.cursor;
     if (!reiniciar) historicoHaCargadoMas = true;
@@ -837,12 +801,11 @@ document.querySelectorAll(".tab").forEach((tab) => {
 // -----------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    const yo = await api("/api/me");
+    const yo = await api("/api/me", { sinToken: true });
     csrfToken = yo.csrf_token;
     await entrarALaApp(yo.usuario);
   } catch (err) {
     mostrarLogin();
-    document.getElementById("login-error").textContent = err.message;
   }
 });
 

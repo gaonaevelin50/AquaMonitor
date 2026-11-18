@@ -5,6 +5,10 @@
       "main": false
     }
   },
+  "rewrites": [
+    { "source": "/monitoreo", "destination": "/index.html" },
+    { "source": "/admin.html", "destination": "/index.html" }
+  ],
   "functions": {
     "app.py": {
       "maxDuration": 30,

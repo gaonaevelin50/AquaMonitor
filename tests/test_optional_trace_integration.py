@@ -7,6 +7,7 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 from app import create_app
+from werkzeug.security import generate_password_hash
 
 ROOT=Path(__file__).resolve().parents[1]
 class OptionalTraceIntegration(unittest.TestCase):
@@ -21,7 +22,10 @@ class OptionalTraceIntegration(unittest.TestCase):
         cls.app=create_app(dict(TESTING=True,DATABASE_URL=cls.dsn,DB_SCHEMA_READY=True,DB_SSLMODE="disable",SECRET_KEY="s"*64,PAIRING_PEPPER="p"*64,SESSION_COOKIE_SECURE=False))
     def test_optional_upgrade_preserves_core_and_historical_rows(self):
         client=self.app.test_client()
-        r=client.post("/api/registro",json={"usuario":"local_sensor_owner","password":"abcde"});self.assertEqual(r.status_code,201);csrf=r.json["csrf_token"]
+        with psycopg.connect(self.dsn) as c:
+            c.execute("INSERT INTO usuarios(usuario,password_hash,creado_en) VALUES (%s,%s,1)",
+                      ("local_sensor_owner",generate_password_hash("abcde")))
+        r=client.post("/api/login",json={"usuario":"local_sensor_owner","password":"abcde"});self.assertEqual(r.status_code,200);csrf=r.json["csrf_token"]
         config="ac_"+secrets.token_hex(32);measure="am_"+secrets.token_hex(32)
         def machine(path,data=None,token=config):return client.open("/api"+path,method="GET" if data is None else "POST",json=data,headers={"Authorization":"Bearer "+token})
         self.assertEqual(machine("/equipos/registro",{"registration_id":str(uuid.uuid4()),"generation":str(uuid.uuid4()),"measurement_token":measure,"mac":"02:00:00:00:00:61"}).status_code,201)

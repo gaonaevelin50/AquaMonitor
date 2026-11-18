@@ -10,12 +10,41 @@
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/monitor.css">
-  <script src="/instrumentos.js" defer></script>
-  <script src="/monitor.js" defer></script>
 </head>
 <body>
 
-  <div id="app" class="app">
+  <!-- ===================== ACCESO ===================== -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-card">
+      <div class="marca marca-grande">
+        <svg class="marca-icono" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 3c4.5 6 9 10.2 9 15.2A9 9 0 0 1 7 18.2C7 13.2 11.5 9 16 3z" fill="currentColor"/>
+          <path class="marca-ola" d="M10.5 19.5c1.8-1.6 3.4-1.6 5.5 0s3.7 1.6 5.5 0" fill="none" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <span class="marca-texto">AquaMonitor</span>
+      </div>
+
+      <form id="form-login">
+        <h1 class="auth-title">Iniciar sesión</h1>
+        <p class="auth-subtitle">Entra para ver el estado de tu estanque.</p>
+
+        <label class="auth-label" for="login-usuario">Usuario</label>
+        <input type="text" id="login-usuario" class="auth-input" required autocomplete="username">
+
+        <label class="auth-label" for="login-password">Contraseña</label>
+        <input type="password" id="login-password" class="auth-input" required autocomplete="current-password">
+
+        <div id="login-error" class="auth-error" role="alert"></div>
+        <button type="submit" class="btn btn-primary btn-block">Iniciar sesión</button>
+
+      </form>
+
+
+    </div>
+  </div>
+
+  <!-- ===================== APLICACIÓN ===================== -->
+  <div id="app" class="app hidden">
 
     <header class="topnav">
       <div class="marca">
@@ -27,18 +56,24 @@
       </div>
 
       <nav class="menu" aria-label="Secciones">
-        <a href="#monitoreo" class="menu-item active" data-view="dashboard" aria-current="page">
+        <a href="#" class="menu-item active" data-view="dashboard">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>
           <span>Monitoreo</span>
         </a>
-        <a href="#historicos" class="menu-item" data-view="historicos">
+        <a href="#" class="menu-item" data-view="historicos">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>
           <span>Históricos</span>
         </a>
-        <a href="#dispositivos" class="menu-item" data-view="dispositivos"><span>Dispositivos</span></a>
+        <a href="#" class="menu-item" data-view="dispositivos"><span>Dispositivos</span></a>
       </nav>
 
-      <div class="user-box"><a class="btn btn-ghost" href="/admin.html">Administración</a></div>
+      <div class="user-box">
+        <span class="avatar" id="user-avatar" aria-hidden="true">U</span>
+        <strong id="user-nombre">Usuario</strong>
+        <button id="btn-logout" class="icon-btn" type="button" aria-label="Cerrar sesión" title="Cerrar sesión">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></svg>
+        </button>
+      </div>
     </header>
 
     <main class="main">
@@ -49,14 +84,29 @@
         <div class="page-head">
           <div>
             <h1>Panel de monitoreo</h1>
-            <p class="page-sub"><span id="dispositivo-actual-tag">Estación AquaMonitor</span><span id="ultima-actualizacion" class="page-sub-hora"></span></p>
+            <p class="page-sub"><span id="dispositivo-actual-tag">Ningún dispositivo</span><span id="ultima-actualizacion" class="page-sub-hora"></span></p>
           </div>
           <div class="head-actions">
-            <span id="estado-conexion" class="pill pill-off"><span class="pill-dot"></span><span id="estado-conexion-texto">Consultando</span></span>
+            <span id="estado-conexion" class="pill pill-off"><span class="pill-dot"></span><span id="estado-conexion-texto">Sin conexión</span></span>
+            <button class="btn btn-ghost js-btn-ble" type="button">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg>
+              <span class="btn-texto">Bluetooth</span>
+            </button>
           </div>
         </div>
 
 
+
+        <div id="conexion-banner" class="banner">
+          <div>
+            <h2>Conecta tu estanque</h2>
+            <p>Enciende el ESP32 y elige cómo conectarlo. En cuanto se conecte verás aquí todas las lecturas.</p>
+          </div>
+          <div class="banner-acciones">
+            <button id="btn-banner-wifi" class="btn btn-primary" type="button">Conectar por WiFi</button>
+            <button id="btn-banner-ble" class="btn btn-ghost js-btn-ble" type="button"><span class="btn-texto">Conectar por Bluetooth</span></button>
+          </div>
+        </div>
 
         <div class="monitor">
 
@@ -141,10 +191,9 @@
           <button class="tab" type="button" data-sensor="Temperatura">Temperatura</button>
           <button class="tab" type="button" data-sensor="Nivel de Agua">Nivel de agua</button>
           <button class="tab" type="button" data-sensor="Turbidez">Turbidez</button>
-          <button class="tab" type="button" data-sensor="Distancia">Distancia</button>
         </div>
 
-        <div class="public-charts" aria-label="Gráficas históricas">
+        <div class="history-charts" aria-label="Gráficas históricas">
           <article class="instrumento" data-chart="temperatura"><h2>Temperatura</h2><canvas role="img" aria-label="Historial de temperatura"></canvas><p class="range"></p></article>
           <article class="instrumento" data-chart="turbidez"><h2>Turbidez</h2><canvas role="img" aria-label="Historial de turbidez"></canvas><p class="range"></p></article>
           <article class="instrumento" data-chart="nivel_agua"><h2>Nivel de agua</h2><canvas role="img" aria-label="Historial de nivel de agua"></canvas><p class="range"></p></article>
@@ -158,23 +207,54 @@
             <tbody id="tabla-historicos-body"></tbody>
           </table>
         </div>
+        <button id="btn-mas-historicos" class="btn btn-ghost btn-small hidden" type="button">
+          Cargar más
+        </button>
       </section>
 
       <section id="view-dispositivos" class="hidden">
-        <div class="page-head"><div><h1>Dispositivos</h1><p class="page-sub">Estación habilitada para consulta pública.</p></div></div>
-        <div class="dispositivos-grid">
-          <article class="dispositivo-card">
-            <h2 class="dispositivo-nombre">Estación AquaMonitor</h2>
-            <dl class="dispositivo-datos">
-              <div><dt>Estado</dt><dd id="public-device-state">Consultando</dd></div>
-              <div><dt>Última recepción</dt><dd id="public-device-time">—</dd></div>
-              <div><dt>Sensores</dt><dd>Temperatura, turbidez y nivel ultrasónico</dd></div>
-            </dl>
-          </article>
-        </div>
+        <div class="page-head"><h1>Mis dispositivos</h1><button id="btn-refrescar-dispositivos" class="btn btn-ghost" type="button">Actualizar lista</button><button id="btn-anadir-dispositivo" class="btn btn-primary" type="button">Añadir mediante código</button></div>
+        <div id="lista-mis-dispositivos" class="dispositivos-grid"></div>
       </section>
     </main>
   </div>
 
+  <!-- ===================== VENTANA: BUSCAR DISPOSITIVOS WIFI ===================== -->
+  <div id="modal-scanner" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-titulo">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="scanner-titulo">Vincular tu ESP32</h2>
+        <button id="btn-cerrar-modal" class="icon-btn" type="button" aria-label="Cerrar">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <p>Activa la vinculación en tu ESP32. Consulta el código temporal en su portal local protegido o en el Monitor Serial.</p>
+      <form id="form-vincular">
+        <label class="auth-label" for="vincular-codigo">Código temporal</label>
+        <input id="vincular-codigo" class="auth-input" required minlength="12" maxlength="14" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <label class="auth-label" for="vincular-nombre">Nombre del dispositivo</label>
+        <input id="vincular-nombre" class="auth-input" required maxlength="40" autocomplete="off">
+        <p id="vincular-error" class="auth-error" role="alert"></p>
+        <button id="btn-vincular-codigo" class="btn btn-primary" type="submit">Vincular dispositivo</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== VENTANA: INFORMACIÓN ===================== -->
+  <div id="modal-info" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="info-titulo">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="info-titulo">Información</h2>
+        <button id="btn-cerrar-info" class="icon-btn" type="button" aria-label="Cerrar">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div id="info-cuerpo" class="info-cuerpo"></div>
+    </div>
+  </div>
+
+  <script src="/instrumentos.js"></script>
+  <script src="/graficas.js"></script>
+  <script src="/script.js"></script>
 </body>
 </html>
