@@ -15,12 +15,6 @@
 #define USAR_WIFI 1
 #define USAR_BLE  1
 
-// URL de tu proyecto en Vercel
-const char* SERVER_URL = "https://aquamonitor-ten.vercel.app/api/lecturas";
-
-// Debe coincidir exactamente con la clave configurada en tu app.py (por defecto "AQUAMONITOR_API_KEY_PLACEHOLDER")
-const char* API_KEY = "AQUAMONITOR_API_KEY_PLACEHOLDER";
-
 const unsigned long INTERVALO_ENVIO_WIFI_MS = 5000;
 
 const float DIST_SENSOR_FONDO_CM = 7.8;
@@ -46,19 +40,18 @@ const int pinTurbidez = 34;
 #include <WiFiManager.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <time.h>
+#include "secrets.h"
 #endif
 
 #if USAR_BLE
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
+#include <NimBLEDevice.h>
 
 #define BLE_SERVICE_UUID "a9e30001-6c1b-4a4e-9a31-5f0b7c2d8e10"
 #define BLE_CHAR_UUID "a9e30002-6c1b-4a4e-9a31-5f0b7c2d8e10"
 
-BLECharacteristic* bleChar = nullptr;
-bool bleConectado = false;
+NimBLECharacteristic* bleChar = nullptr;
+NimBLEServer* servidorBle = nullptr;
 #endif
 
 const int16_t SIN_DATO = 0x7FFF;
@@ -166,36 +159,22 @@ bool leerTurbidez(int &raw, float &ntu) {
 
 #if USAR_BLE
 
-class CallbacksBle : public BLEServerCallbacks {
-  void onConnect(BLEServer* servidor) {
-    bleConectado = true;
-  }
-
-  void onDisconnect(BLEServer* servidor) {
-    bleConectado = false;
-    BLEDevice::startAdvertising();
-  }
-};
-
 void iniciarBle() {
   char sufijo[5];
   snprintf(sufijo, sizeof(sufijo), "%04X", (uint16_t)(ESP.getEfuseMac() >> 32));
   String nombre = String("AquaMonitor-") + sufijo;
 
-  BLEDevice::init(nombre.c_str());
+  NimBLEDevice::init(nombre.c_str());
 
-  BLEServer* servidor = BLEDevice::createServer();
-  servidor->setCallbacks(new CallbacksBle());
+  servidorBle = NimBLEDevice::createServer();
+  servidorBle->advertiseOnDisconnect(true);
 
-  BLEService* servicio = servidor->createService(BLE_SERVICE_UUID);
+  NimBLEService* servicio = servidorBle->createService(BLE_SERVICE_UUID);
 
   bleChar = servicio->createCharacteristic(
     BLE_CHAR_UUID,
-    BLECharacteristic::PROPERTY_READ |
-    BLECharacteristic::PROPERTY_NOTIFY
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
   );
-
-  bleChar->addDescriptor(new BLE2902());
 
   uint8_t vacio[8];
   for (int i = 0; i < 4; i++) {
@@ -204,13 +183,16 @@ void iniciarBle() {
   }
 
   bleChar->setValue(vacio, 8);
-  servicio->start();
+  servidorBle->start();
 
-  BLEAdvertising* anuncio = BLEDevice::getAdvertising();
+  NimBLEAdvertising* anuncio = NimBLEDevice::getAdvertising();
   anuncio->addServiceUUID(BLE_SERVICE_UUID);
-  anuncio->setScanResponse(true);
+  NimBLEAdvertisementData respuesta;
+  respuesta.setName(nombre.c_str());
+  anuncio->setScanResponseData(respuesta);
+  anuncio->enableScanResponse(true);
 
-  BLEDevice::startAdvertising();
+  NimBLEDevice::startAdvertising();
   Serial.println("Bluetooth listo. Nombre: " + nombre);
 }
 
@@ -234,7 +216,7 @@ void enviarPorBle(float temp, bool tempOk,
   }
 
   bleChar->setValue(paquete, 8);
-  if (bleConectado) {
+  if (servidorBle->getConnectedCount() > 0) {
     bleChar->notify();
   }
 }
@@ -246,151 +228,8 @@ void enviarPorBle(float temp, bool tempOk,
 // ============================================================
 
 #if USAR_WIFI
-
-WiFiManager wm;
-
-const char* AP_NOMBRE = "AquaMonitor-Setup";
-const char* AP_CLAVE = "aquamonitor";
-
-const int PIN_BOTON_BOOT = 0;
-
-unsigned long wifiCaidoDesde = 0;
-unsigned long botonDesde = 0;
-bool wifiEstabaConectado = false;
-
-void avisoPortalAbierto(WiFiManager* gestor) {
-  Serial.println();
-  Serial.println("*** CONFIGURA EL WIFI ***");
-  Serial.println("Conectate a AquaMonitor-Setup");
-  Serial.println("Clave: aquamonitor");
-  Serial.println("Entra a 192.168.4.1");
-}
-
-void conectarWifi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.setSleep(false);
-
-  wm.setDebugOutput(false);
-  wm.setConnectTimeout(20);
-  wm.setConfigPortalTimeout(180);
-  wm.setConfigPortalBlocking(false);
-  wm.setAPCallback(avisoPortalAbierto);
-
-  Serial.println("Conectando a la ultima red WiFi guardada...");
-
-  if (!wm.autoConnect(AP_NOMBRE, AP_CLAVE)) {
-    Serial.println("Configura la red desde AquaMonitor-Setup.");
-  }
-}
-
-void gestionarWifi() {
-  wm.process();
-
-  bool conectado = (WiFi.status() == WL_CONNECTED);
-
-  if (conectado && !wifiEstabaConectado) {
-    Serial.println("WiFi conectado correctamente.");
-    Serial.println("Red: " + WiFi.SSID());
-    Serial.println("IP: " + WiFi.localIP().toString());
-  }
-
-  if (!conectado && wifiEstabaConectado) {
-    Serial.println("Se perdio la conexion WiFi.");
-  }
-
-  wifiEstabaConectado = conectado;
-
-  if (conectado) {
-    wifiCaidoDesde = 0;
-  } else {
-    if (wifiCaidoDesde == 0) {
-      wifiCaidoDesde = millis();
-    }
-
-    if (!wm.getConfigPortalActive() &&
-        millis() - wifiCaidoDesde > 60000) {
-      Serial.println("Abriendo portal de configuracion WiFi.");
-      wm.startConfigPortal(AP_NOMBRE, AP_CLAVE);
-      wifiCaidoDesde = millis();
-    }
-  }
-
-  if (digitalRead(PIN_BOTON_BOOT) == LOW) {
-    if (botonDesde == 0) {
-      botonDesde = millis();
-    }
-
-    if (millis() - botonDesde > 3000) {
-      Serial.println("Borrando configuracion WiFi.");
-      wm.resetSettings();
-      delay(300);
-      ESP.restart();
-    }
-  } else {
-    botonDesde = 0;
-  }
-}
-
-void enviarPorWifi(float temp, bool tempOk,
-                   float nivel, bool nivelOk,
-                   float turb, bool turbOk) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi no conectado. No se envio la lectura.");
-    return;
-  }
-
-  if (!tempOk && !nivelOk && !turbOk) {
-    Serial.println("No hay lecturas validas para enviar.");
-    return;
-  }
-
-  String json = "{\"mac\":\"" + WiFi.macAddress() +
-                "\",\"rssi\":" + String(WiFi.RSSI());
-
-  if (tempOk) {
-    json += ",\"temperatura\":" + String(temp, 1);
-  }
-
-  if (nivelOk) {
-    json += ",\"nivel_agua\":" + String(nivel, 1);
-  }
-
-  if (turbOk) {
-    json += ",\"turbidez\":" + String(turb, 1);
-  }
-
-  json += "}";
-
-  WiFiClientSecure cliente;
-  cliente.setInsecure();
-
-  HTTPClient http;
-  http.setTimeout(10000);
-
-  if (!http.begin(cliente, SERVER_URL)) {
-    Serial.println("No se pudo iniciar la conexion con el servidor.");
-    return;
-  }
-
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-API-Key", API_KEY);
-
-  int codigo = http.POST(json);
-
-  if (codigo >= 200 && codigo < 300) {
-    Serial.println("Lecturas enviadas correctamente a AquaMonitor.");
-  } else if (codigo == 401) {
-    Serial.println("ERROR 401: la API KEY no coincide con Vercel.");
-  } else if (codigo < 0) {
-    Serial.printf("Error de conexion WiFi/HTTPS: %s\n", http.errorToString(codigo).c_str());
-  } else {
-    Serial.printf("Error del servidor HTTP %d: %s\n", codigo, http.getString().c_str());
-  }
-
-  http.end();
-}
-
+#include "water_level.h"
+#include "secure_network.h"
 #endif
 
 // ============================================================
@@ -424,6 +263,7 @@ void setup() {
 void loop() {
 #if USAR_WIFI
   gestionarWifi();
+  gestionarIdentidad();
 #endif
 
   if (millis() - ultimaLectura < INTERVALO_LECTURA_MS) {
@@ -494,7 +334,7 @@ void loop() {
     enviarPorWifi(
       temperaturaC, tempOk,
       nivelPct, nivelOk,
-      turbNtu, turbOk
+      turbNtu, turbOk, distanciaCm
     );
   }
 #endif

@@ -5,6 +5,14 @@
 #include <esp_random.h>
 #include <esp_sntp.h>
 
+void diagnosticarMemoria(const char* etapa) {
+  const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  Serial.printf("Memoria %s: libre=%u maxBloque=%u minimo=%u\n", etapa,
+                (unsigned)heap_caps_get_free_size(caps),
+                (unsigned)heap_caps_get_largest_free_block(caps),
+                (unsigned)heap_caps_get_minimum_free_size(caps));
+}
+
 WiFiManager wm;
 Preferences identidadNvs;
 JsonDocument identidad;
@@ -157,8 +165,7 @@ void iniciarIdentidad() {
     identidad["public_id"] = "";
     identidadLista = true;
     if (!guardarIdentidad()) return;
-    vinculacionLocal = true;  // first physical setup only
-    inicioVinculacion = millis();
+    Serial.println("Identidad nueva local: registro pendiente de autorizacion por Serial (v).");
   }
 }
 
@@ -383,6 +390,11 @@ void conectarWifi() {
 
 void gestionarWifi() {
   if (!wifiConfigurado) return;
+  const int comando = Serial.read();
+  if (comando == 'v') activarVinculacionLocal();
+  if (comando == 'p' && !wm.getConfigPortalActive()) {
+    wm.startConfigPortal(AP_NOMBRE, AP_CLAVE);
+  }
   wm.process();
   bool connected = WiFi.status() == WL_CONNECTED;
   if (connected && !wifiEstabaConectado) {
@@ -413,8 +425,7 @@ void gestionarWifi() {
     if (!botonDesde) botonDesde = millis();
     if (!botonLargo && millis()-botonDesde > 3000) {
       botonLargo = true;
-      wm.resetSettings();  // WiFi only. Never erase aquamon-sec identity.
-      ESP.restart();
+      if (!wm.getConfigPortalActive()) wm.startConfigPortal(AP_NOMBRE, AP_CLAVE);
     }
   } else if (botonDesde) {
     if (!botonLargo && millis()-botonDesde > 50) activarVinculacionLocal();
@@ -446,6 +457,7 @@ void gestionarIdentidad() {
   String config = identidad["config"].as<String>();
   int code;
   if (!identidad["public_id"].as<String>().length()) {
+    if (!vinculacionLocal) return;
     input["registration_id"] = identidad["registration_id"];
     input["generation"] = identidad["generation"];
     input["measurement_token"] = identidad["measurement"];
@@ -569,8 +581,6 @@ void enviarPorWifi(float temp, bool tempOk, float nivel, bool nivelOk, float tur
   JsonDocument input, output;
   input["rssi"] = WiFi.RSSI();
   if (tempOk) input["temperatura"] = serialized(String(temp,1));
-  input["temperatura_estado"] = AquaMonitorTemperatura::texto(estadoTemperatura);
-  if (estadoTemperatura == AquaMonitorTemperatura::Estado::Sospechosa) input["temperatura_observada"] = serialized(String(temp,2));
   if (nivelOk) input["nivel_agua"] = serialized(String(nivel,1));
   if (AquaMonitorNivel::distanciaValida(distanciaCm)) input["distancia_cm"] = serialized(String(distanciaCm,2));
   input["nivel_calibracion"] = "provisional-7.8-2.0";

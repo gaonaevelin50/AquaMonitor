@@ -25,7 +25,7 @@ El ESP32 genera sus credenciales y UUID, los guarda en NVS y nunca muestra token
 
 En la inspección de esta etapa, la URL, CA y contraseña del portal del `secrets.h` local estaban vacías. No se ha modificado ese archivo.
 
-- `AQUAMONITOR_SERVER_URL`: endpoint público `https://aquamonitor-ot2xvv3ux-rota-smart1.vercel.app/api/lecturas`.
+- `AQUAMONITOR_SERVER_URL`: endpoint público `https://aquamonitor-gd8ilkz0d-rota-smart1.vercel.app/api/lecturas`.
 - `AQUAMONITOR_ROOT_CA`: certificado raíz PEM real que valide ese dominio. No inventarlo ni usar el certificado de otro servicio.
 - `AQUAMONITOR_WIFI_PORTAL_PASSWORD`: contraseña privada de 8 a 63 caracteres.
 
