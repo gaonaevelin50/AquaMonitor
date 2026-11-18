@@ -1,26 +1,180 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AquaMonitor | Monitoreo del agua</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0B2A30">
+  <title>AquaMonitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/monitor.css">
+  <script src="/instrumentos.js" defer></script>
   <script src="/monitor.js" defer></script>
 </head>
 <body>
-  <header><div class="shell bar"><strong>AquaMonitor</strong><a href="/admin.html">Administraci?n</a></div></header>
-  <main class="shell">
-    <div class="intro">
-      <h1>Monitoreo del agua</h1>
-      <p id="status" role="status">Cargando mediciones?</p>
-      <p>?ltima medici?n <time id="latest">?</time></p>
-    </div>
-    <section class="grid" aria-label="Lecturas y gr?ficas">
-      <article data-sensor="temperatura"><h2>Temperatura</h2><p class="reading">?</p><canvas role="img" aria-label="Historial de temperatura"></canvas><p class="range"></p></article>
-      <article data-sensor="turbidez"><h2>Turbidez</h2><p class="reading">?</p><canvas role="img" aria-label="Historial de turbidez"></canvas><p class="range"></p></article>
-      <article data-sensor="nivel_agua"><h2>Nivel del agua</h2><p class="reading">?</p><canvas role="img" aria-label="Historial de nivel del agua"></canvas><p class="range"></p></article>
-      <article data-sensor="distancia_cm"><h2>Distancia al agua</h2><p class="reading">?</p><canvas role="img" aria-label="Historial de distancia al agua"></canvas><p class="range"></p></article>
-    </section>
-  </main>
+
+  <div id="app" class="app">
+
+    <header class="topnav">
+      <div class="marca">
+        <svg class="marca-icono" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 3c4.5 6 9 10.2 9 15.2A9 9 0 0 1 7 18.2C7 13.2 11.5 9 16 3z" fill="currentColor"/>
+          <path class="marca-ola" d="M10.5 19.5c1.8-1.6 3.4-1.6 5.5 0s3.7 1.6 5.5 0" fill="none" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <span class="marca-texto">AquaMonitor</span>
+      </div>
+
+      <nav class="menu" aria-label="Secciones">
+        <a href="#monitoreo" class="menu-item active" data-view="dashboard" aria-current="page">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>
+          <span>Monitoreo</span>
+        </a>
+        <a href="#historicos" class="menu-item" data-view="historicos">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>
+          <span>Históricos</span>
+        </a>
+        <a href="#dispositivos" class="menu-item" data-view="dispositivos"><span>Dispositivos</span></a>
+      </nav>
+
+      <div class="user-box"><a class="btn btn-ghost" href="/admin.html">Administración</a></div>
+    </header>
+
+    <main class="main">
+        <div id="aviso-conexion" class="aviso hidden" role="alert"></div>
+
+      <!-- ===== MONITOREO ===== -->
+      <section id="view-dashboard">
+        <div class="page-head">
+          <div>
+            <h1>Panel de monitoreo</h1>
+            <p class="page-sub"><span id="dispositivo-actual-tag">Estación AquaMonitor</span><span id="ultima-actualizacion" class="page-sub-hora"></span></p>
+          </div>
+          <div class="head-actions">
+            <span id="estado-conexion" class="pill pill-off"><span class="pill-dot"></span><span id="estado-conexion-texto">Consultando</span></span>
+          </div>
+        </div>
+
+
+
+        <div class="monitor">
+
+          <!-- Nivel de agua -->
+          <article class="tanque">
+            <header class="tanque-head">
+              <h2>Nivel de agua</h2>
+              <span id="tag-nivelAgua" class="estado estado-off">Sin datos</span>
+            </header>
+            <div id="val-nivelAgua" class="tanque-valor">--</div>
+            <p id="desc-nivelAgua" class="tanque-desc">Esperando conexión.</p>
+            <p id="distancia-nivelAgua" class="tanque-desc">Distancia: sin datos.</p>
+
+            <div class="tanque-visor">
+              <div class="tanque-escala" aria-hidden="true">
+                <span style="bottom: 85%">85</span>
+                <span style="bottom: 45%">45</span>
+              </div>
+              <div class="tanque-vidrio" aria-label="Sin lectura válida de nivel de agua">
+                <span id="nivel-sin-lectura" class="nivel-sin-lectura">Sin lectura válida</span>
+                <div id="agua-nivelAgua" class="agua vacio" style="--nivel: 0%"></div>
+                <i class="tanque-linea" style="bottom: 85%"></i>
+                <i class="tanque-linea" style="bottom: 45%"></i>
+              </div>
+            </div>
+          </article>
+
+          <!-- Temperatura y turbidez -->
+          <div class="instrumentos">
+
+            <section class="instrumento">
+              <header class="instrumento-head">
+                <h2>
+                  <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/></svg>
+                  Temperatura
+                </h2>
+                <span id="tag-temperatura" class="estado estado-off">Sin datos</span>
+              </header>
+              <div id="val-temperatura" class="valor">--</div>
+              <div class="escala escala-temp">
+                <span id="ptr-temperatura" class="marcador" style="visibility: hidden"></span>
+              </div>
+              <div class="escala-rotulos" aria-hidden="true">
+                <span style="left: 40%">16</span><span style="left: 65%">26</span>
+              </div>
+              <p id="desc-temperatura" class="instrumento-desc">Esperando conexión.</p>
+            </section>
+
+            <section class="instrumento">
+              <header class="instrumento-head">
+                <h2>
+                  <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                  Turbidez
+                </h2>
+                <span id="tag-turbidez" class="estado estado-off">Sin datos</span>
+              </header>
+              <div id="val-turbidez" class="valor">--</div>
+              <div class="escala escala-turb">
+                <span id="ptr-turbidez" class="marcador" style="visibility: hidden"></span>
+              </div>
+              <div class="escala-rotulos" aria-hidden="true">
+                <span style="left: 50%">50</span>
+              </div>
+              <p id="desc-turbidez" class="instrumento-desc">Esperando conexión.</p>
+            </section>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== HISTÓRICOS ===== -->
+      <section id="view-historicos" class="hidden">
+        <div class="page-head">
+          <div>
+            <h1 id="titulo-historicos">Registros históricos</h1>
+            <p class="page-sub">Lecturas WiFi del dispositivo, de la más reciente a la más antigua.</p>
+          </div>
+        </div>
+
+        <div class="tabs" role="group" aria-label="Filtrar por sensor">
+          <button class="tab active" type="button" data-sensor="Todos">Todos</button>
+          <button class="tab" type="button" data-sensor="Temperatura">Temperatura</button>
+          <button class="tab" type="button" data-sensor="Nivel de Agua">Nivel de agua</button>
+          <button class="tab" type="button" data-sensor="Turbidez">Turbidez</button>
+          <button class="tab" type="button" data-sensor="Distancia">Distancia</button>
+        </div>
+
+        <div class="public-charts" aria-label="Gráficas históricas">
+          <article class="instrumento" data-chart="temperatura"><h2>Temperatura</h2><canvas role="img" aria-label="Historial de temperatura"></canvas><p class="range"></p></article>
+          <article class="instrumento" data-chart="turbidez"><h2>Turbidez</h2><canvas role="img" aria-label="Historial de turbidez"></canvas><p class="range"></p></article>
+          <article class="instrumento" data-chart="nivel_agua"><h2>Nivel de agua</h2><canvas role="img" aria-label="Historial de nivel de agua"></canvas><p class="range"></p></article>
+          <article class="instrumento" data-chart="distancia_cm"><h2>Distancia al agua</h2><canvas role="img" aria-label="Historial de distancia al agua"></canvas><p class="range"></p></article>
+        </div>
+        <div class="tabla-wrap">
+          <table class="tabla">
+            <thead>
+              <tr><th>Fecha</th><th>Sensor</th><th>Valor</th><th>Estado</th></tr>
+            </thead>
+            <tbody id="tabla-historicos-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-dispositivos" class="hidden">
+        <div class="page-head"><div><h1>Dispositivos</h1><p class="page-sub">Estación habilitada para consulta pública.</p></div></div>
+        <div class="dispositivos-grid">
+          <article class="dispositivo-card">
+            <h2 class="dispositivo-nombre">Estación AquaMonitor</h2>
+            <dl class="dispositivo-datos">
+              <div><dt>Estado</dt><dd id="public-device-state">Consultando</dd></div>
+              <div><dt>Última recepción</dt><dd id="public-device-time">—</dd></div>
+              <div><dt>Sensores</dt><dd>Temperatura, turbidez y nivel ultrasónico</dd></div>
+            </dl>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
 </body>
 </html>
